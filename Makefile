@@ -12,7 +12,6 @@ install: ## Create venv and install all dependencies
 	$(PYTHON) -m venv $(VENV)
 	$(BIN)/pip install --upgrade pip
 	$(BIN)/pip install -e ".[dev]"
-	$(BIN)/pre-commit install
 	@echo "✓ Environment ready — activate with: source $(VENV)/bin/activate"
 
 run: ## Launch the Sudoku Solver

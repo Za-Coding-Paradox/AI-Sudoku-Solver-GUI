@@ -95,18 +95,8 @@ if [[ "$TEST_ONLY" == false ]]; then
     pip install -e ".[dev]" --quiet
     success "All dependencies installed."
 
-    # ── Pre-commit hooks ─────────────────────────────────────────────────────
-    header "Step 4 — Pre-commit hooks"
-    if command -v pre-commit &>/dev/null; then
-        info "Installing pre-commit hooks ..."
-        pre-commit install
-        success "Pre-commit hooks installed."
-    else
-        warn "pre-commit not found in PATH — skipping hook installation."
-    fi
-
     # ── Health check ─────────────────────────────────────────────────────────
-    header "Step 5 — Health check"
+    header "Step 4 — Health check"
     info "Verifying core imports ..."
     python3 -c "import pygame; print(f'  pygame-ce {pygame.__version__}  ✓')" \
         || error "pygame-ce import failed — check installation."
