@@ -39,7 +39,7 @@ REM INSTALL SECTION (skipped with --test-only)
 REM ────────────────────────────────────────────────────────────────────────────
 IF %TEST_ONLY%==1 GOTO :ACTIVATE_ONLY
 
-REM ── Check Python ─────────────────────────────────────────────────────────────
+REM ── Step 1 — Check Python ────────────────────────────────────────────────────
 echo --- Step 1 ^| Checking Python ---
 python --version >nul 2>&1
 IF ERRORLEVEL 1 (
@@ -63,7 +63,7 @@ IF !PY_MAJOR! EQU %PYTHON_MIN_MAJOR% IF !PY_MINOR! LSS %PYTHON_MIN_MINOR% (
 )
 echo [OK]    Python !PY_VERSION! found.
 
-REM ── Virtual environment ───────────────────────────────────────────────────────
+REM ── Step 2 — Virtual environment ─────────────────────────────────────────────
 echo.
 echo --- Step 2 ^| Virtual environment ---
 IF EXIST "%VENV_DIR%\" (
@@ -85,7 +85,7 @@ IF ERRORLEVEL 1 (
     EXIT /B 1
 )
 
-REM ── Install dependencies ──────────────────────────────────────────────────────
+REM ── Step 3 — Install dependencies ────────────────────────────────────────────
 echo.
 echo --- Step 3 ^| Installing dependencies ---
 echo [INFO]  Upgrading pip ...
@@ -99,32 +99,45 @@ IF ERRORLEVEL 1 (
 )
 echo [OK]    All dependencies installed.
 
-REM ── Pre-commit hooks ──────────────────────────────────────────────────────────
+REM ── Step 4 — Pre-commit hooks ─────────────────────────────────────────────────
 echo.
 echo --- Step 4 ^| Pre-commit hooks ---
 WHERE pre-commit >nul 2>&1
 IF NOT ERRORLEVEL 1 (
     echo [INFO]  Installing pre-commit hooks ...
-    pre-commit install --quiet
-    echo [OK]    Pre-commit hooks installed.
+    REM NOTE: --quiet removed; not supported in all pre-commit versions
+    pre-commit install
+    IF ERRORLEVEL 1 (
+        echo [WARN]  pre-commit install returned a non-zero exit code -- hooks may not be set up.
+    ) ELSE (
+        echo [OK]    Pre-commit hooks installed.
+    )
 ) ELSE (
-    echo [WARN]  pre-commit not found -- skipping hook installation.
+    echo [WARN]  pre-commit not found in PATH -- skipping hook installation.
 )
 
-REM ── Health check ─────────────────────────────────────────────────────────────
+REM ── Step 5 — Health check ─────────────────────────────────────────────────────
 echo.
 echo --- Step 5 ^| Health check ---
 echo [INFO]  Verifying core imports ...
+
 python -c "import pygame; print('  pygame-ce', pygame.__version__, ' OK')"
 IF ERRORLEVEL 1 (
     echo [ERROR] pygame-ce import failed -- check installation.
     EXIT /B 1
 )
+
+python -c "import sudoku; print('  sudoku package       OK')" 2>nul
+IF ERRORLEVEL 1 (
+    echo [WARN]  sudoku package not importable yet ^(normal before first run^).
+)
+
 python -c "import pytest; print('  pytest', pytest.__version__, '   OK')"
 IF ERRORLEVEL 1 (
     echo [ERROR] pytest import failed -- check installation.
     EXIT /B 1
 )
+
 echo [OK]    Health check passed.
 GOTO :RUN_TESTS_SECTION
 
@@ -155,7 +168,7 @@ SET TEST_EXIT=%ERRORLEVEL%
 
 echo.
 IF %TEST_EXIT%==0 (
-    echo   [OK] All tests passed!
+    echo   [OK]   All tests passed!
 ) ELSE (
     echo   [FAIL] Some tests failed ^(exit code %TEST_EXIT%^).
     echo          Review the output above for details.
@@ -172,6 +185,8 @@ echo     %VENV_DIR%\Scripts\activate.bat
 echo.
 echo   Run the solver:
 echo     python -m sudoku.app
+echo      -- or --
+echo     make run          (if GNU Make is available)
 echo.
 echo   Run tests (full suite with coverage):
 echo     setup.bat --test

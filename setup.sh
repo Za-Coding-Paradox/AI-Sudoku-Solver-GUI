@@ -99,7 +99,7 @@ if [[ "$TEST_ONLY" == false ]]; then
     header "Step 4 — Pre-commit hooks"
     if command -v pre-commit &>/dev/null; then
         info "Installing pre-commit hooks ..."
-        pre-commit install --quiet
+        pre-commit install
         success "Pre-commit hooks installed."
     else
         warn "pre-commit not found in PATH — skipping hook installation."
