@@ -277,21 +277,29 @@ class BoardWidget:
         return True
 
     def _handle_key(self, event: pygame.event.Event) -> bool:
-        # Digit input
-        if event.key in range(pygame.K_1, pygame.K_9 + 1):
-            digit = event.key - pygame.K_0
-            return self._place_digit(digit)
-        if event.key == pygame.K_0 or event.key == pygame.K_BACKSPACE or event.key == pygame.K_DELETE:
+        key = event.key
+        # Arrow navigation first — prevents any accidental digit fallthrough
+        if key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
+            return self._move_selection(key)
+        # Clear cell
+        if key in (pygame.K_0, pygame.K_KP0, pygame.K_BACKSPACE, pygame.K_DELETE):
             return self._place_digit(0)
-        # Numpad
-        if event.key in range(pygame.K_KP1, pygame.K_KP9 + 1):
-            digit = event.key - pygame.K_KP0
-            return self._place_digit(digit)
-        if event.key == pygame.K_KP0:
-            return self._place_digit(0)
-        # Arrow navigation
-        if event.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
-            return self._move_selection(event.key)
+        # Top-row digits 1-9 (explicit map, no arithmetic)
+        row_map = {
+            pygame.K_1: 1, pygame.K_2: 2, pygame.K_3: 3,
+            pygame.K_4: 4, pygame.K_5: 5, pygame.K_6: 6,
+            pygame.K_7: 7, pygame.K_8: 8, pygame.K_9: 9,
+        }
+        if key in row_map:
+            return self._place_digit(row_map[key])
+        # Numpad digits 1-9 (explicit map, no arithmetic)
+        kp_map = {
+            pygame.K_KP1: 1, pygame.K_KP2: 2, pygame.K_KP3: 3,
+            pygame.K_KP4: 4, pygame.K_KP5: 5, pygame.K_KP6: 6,
+            pygame.K_KP7: 7, pygame.K_KP8: 8, pygame.K_KP9: 9,
+        }
+        if key in kp_map:
+            return self._place_digit(kp_map[key])
         return False
 
     def _place_digit(self, digit: int) -> bool:

@@ -34,8 +34,8 @@ from sudoku.gui.theme import ThemeManager
 # ---------------------------------------------------------------------------
 
 STATUS_H = 32
-PANEL_W = 220
-WINDOW_W = GRID_SIZE + PANEL_W          # 576 + 220 = 796
+PANEL_W = 260
+WINDOW_W = GRID_SIZE + PANEL_W          # 576 + 260 = 836
 WINDOW_H = GRID_SIZE + STATUS_H         # 576 + 32  = 608
 FPS = 60
 WINDOW_TITLE = "Sudoku Solver — pygame-ce"
