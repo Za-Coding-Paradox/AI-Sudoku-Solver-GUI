@@ -1,17 +1,20 @@
 """app.py — pygame-ce application entry point.
 
-Initialises pygame, builds the layout, wires the Controller, runs the loop.
+Layout
+------
+The window is divided into three docked panels:
 
-Layout (default 900×640 window)
----------------------------------
-┌──────────────────┬────────────┐
-│                  │            │
-│   BoardWidget    │  Control   │
-│   576 × 576      │  Panel     │
-│                  │  324 × 576 │
-├──────────────────┴────────────┤
-│         StatusBar  900 × 32   │
-└───────────────────────────────┘
+  ┌──────────────────────────────┬──────────────┐
+  │                              │              │
+  │        BOARD PANEL           │  SIDE PANEL  │
+  │        (resizable)           │  (fixed w)   │
+  │                              │              │
+  ├──────────────────────────────┴──────────────┤
+  │              STATUS BAR                     │
+  └─────────────────────────────────────────────┘
+
+The board panel and side panel are separated by a draggable divider.
+The window is fully resizable. The board always stays square.
 """
 
 from __future__ import annotations
@@ -24,53 +27,126 @@ import pygame
 from sudoku.controller import Controller
 from sudoku.events.bus import EventBus
 from sudoku.events.types import ThemeChanged
-from sudoku.gui.board_widget import BoardWidget, GRID_SIZE
+from sudoku.gui.board_widget import BoardWidget, CELL_SIZE
 from sudoku.gui.control_panel import ControlPanel
 from sudoku.gui.status_bar import StatusBar
 from sudoku.gui.theme import ThemeManager
 
 # ---------------------------------------------------------------------------
-# Window constants
+# Layout defaults
 # ---------------------------------------------------------------------------
 
-STATUS_H = 32
-PANEL_W = 260
-WINDOW_W = GRID_SIZE + PANEL_W          # 576 + 260 = 836
-WINDOW_H = GRID_SIZE + STATUS_H         # 576 + 32  = 608
-FPS = 60
-WINDOW_TITLE = "Sudoku Solver — pygame-ce"
+SIDE_PANEL_W  = 270          # fixed width for the control panel
+STATUS_H      = 32
+MIN_BOARD_PX  = 288          # 32 px/cell minimum
+DIVIDER_W     = 5            # draggable divider thickness
+FPS           = 60
+WINDOW_TITLE  = "Sudoku Solver"
+DEFAULT_GRID  = CELL_SIZE * 9  # 576
 
+
+def _clamp(val: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, val))
+
+
+# ---------------------------------------------------------------------------
+# DividerDragger — tracks dragging the panel separator
+# ---------------------------------------------------------------------------
+
+class DividerDragger:
+    """Tracks dragging of the vertical divider between board and side panel."""
+
+    def __init__(self, x: int) -> None:
+        self._x       = x
+        self._dragging = False
+        self._drag_off = 0
+
+    @property
+    def x(self) -> int:
+        return self._x
+
+    def rect(self, window_h: int, status_h: int) -> pygame.Rect:
+        return pygame.Rect(self._x, 0, DIVIDER_W, window_h - status_h)
+
+    def handle_event(
+        self,
+        event: pygame.event.Event,
+        window_w: int,
+        window_h: int,
+    ) -> bool:
+        divider = self.rect(window_h, STATUS_H)
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if divider.collidepoint(event.pos):
+                self._dragging = True
+                self._drag_off = event.pos[0] - self._x
+                return True
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._dragging = False
+        if event.type == pygame.MOUSEMOTION and self._dragging:
+            new_x = event.pos[0] - self._drag_off
+            self._x = _clamp(new_x, MIN_BOARD_PX, window_w - SIDE_PANEL_W - DIVIDER_W)
+            return True
+        return False
+
+    def cursor(self, window_h: int) -> bool:
+        """Return True if mouse is over the divider (for cursor change)."""
+        mx, my = pygame.mouse.get_pos()
+        return self.rect(window_h, STATUS_H).collidepoint(mx, my)
+
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Application entry point."""
     pygame.init()
     pygame.display.set_caption(WINDOW_TITLE)
 
-    screen = pygame.display.set_mode((WINDOW_W, WINDOW_H), pygame.RESIZABLE)
-    clock = pygame.time.Clock()
+    window_w = DEFAULT_GRID + DIVIDER_W + SIDE_PANEL_W
+    window_h = DEFAULT_GRID + STATUS_H
+    screen = pygame.display.set_mode((window_w, window_h), pygame.RESIZABLE)
+    clock  = pygame.time.Clock()
 
-    # --- Shared objects ---
-    bus = EventBus.get_instance()
+    # Cursor resources
+    resize_cursor  = pygame.SYSTEM_CURSOR_SIZEWE
+    default_cursor = pygame.SYSTEM_CURSOR_ARROW
+    wait_cursor    = pygame.SYSTEM_CURSOR_WAIT
+
+    # Shared state
+    bus           = EventBus.get_instance()
     theme_manager = ThemeManager(default="light")
+    divider       = DividerDragger(x=DEFAULT_GRID)
+    generating    = False  # True while random puzzle is being generated
 
-    # --- Layout rects ---
-    board_rect = pygame.Rect(0, 0, GRID_SIZE, GRID_SIZE)
-    panel_rect = pygame.Rect(GRID_SIZE, 0, WINDOW_W - GRID_SIZE, GRID_SIZE)
-    status_rect = pygame.Rect(0, GRID_SIZE, WINDOW_W, STATUS_H)
+    # --- Build widgets ---
+    def board_rect() -> pygame.Rect:
+        grid_px = divider.x
+        return pygame.Rect(0, 0, grid_px, grid_px)
 
-    # --- Controller ---
+    def panel_rect() -> pygame.Rect:
+        panel_x = divider.x + DIVIDER_W
+        panel_w = screen.get_width() - panel_x
+        return pygame.Rect(panel_x, 0, panel_w, screen.get_height() - STATUS_H)
+
+    def status_rect() -> pygame.Rect:
+        w, h = screen.get_size()
+        return pygame.Rect(0, h - STATUS_H, w, STATUS_H)
+
+    # Controller
     controller = Controller(bus=bus, puzzles_dir=Path("puzzles"))
 
-    # --- GUI widgets ---
+    # Board widget
     board_widget = BoardWidget(
         surface=screen,
-        rect=board_rect,
+        rect=board_rect(),
         theme_manager=theme_manager,
         bus=bus,
     )
+
+    # Control panel
     control_panel = ControlPanel(
         surface=screen,
-        rect=panel_rect,
+        rect=panel_rect(),
         theme_manager=theme_manager,
         on_solve=controller.solve,
         on_load=controller.load_puzzle,
@@ -78,9 +154,11 @@ def main() -> None:
         on_new=controller.new_board,
         bus=bus,
     )
+
+    # Status bar
     status_bar = StatusBar(
         surface=screen,
-        rect=status_rect,
+        rect=status_rect(),
         theme_manager=theme_manager,
         bus=bus,
     )
@@ -88,68 +166,112 @@ def main() -> None:
     # --- Keyboard shortcuts ---
     def handle_global_keys(event: pygame.event.Event) -> bool:
         mods = pygame.key.get_mods()
-        if event.type == pygame.KEYDOWN:
-            if mods & pygame.KMOD_CTRL:
-                if event.key == pygame.K_z:
-                    controller._on_undo(None)  # type: ignore[arg-type]
-                    return True
-                if event.key == pygame.K_y:
-                    controller._on_redo(None)  # type: ignore[arg-type]
-                    return True
-                if event.key == pygame.K_o:
-                    controller.load_puzzle()
-                    return True
-                if event.key == pygame.K_n:
-                    controller.new_board()
-                    return True
-            if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
-                controller.solve()
+        if event.type != pygame.KEYDOWN:
+            return False
+
+        if mods & pygame.KMOD_CTRL:
+            if event.key == pygame.K_z:
+                controller._on_undo(None)   # type: ignore[arg-type]
                 return True
-            if event.key == pygame.K_t:
-                name = theme_manager.toggle()
-                bus.publish(ThemeChanged(theme_name=name))
+            if event.key == pygame.K_y:
+                controller._on_redo(None)   # type: ignore[arg-type]
                 return True
-            if event.key == pygame.K_ESCAPE:
-                pygame.quit()
-                sys.exit(0)
+            if event.key == pygame.K_o:
+                controller.load_puzzle()
+                return True
+            if event.key == pygame.K_n:
+                controller.new_board()
+                return True
+
+        if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+            controller.solve()
+            return True
+        if event.key == pygame.K_t:
+            name = theme_manager.toggle()
+            bus.publish(ThemeChanged(theme_name=name))
+            return True
+        if event.key == pygame.K_ESCAPE:
+            pygame.quit()
+            sys.exit(0)
+
         return False
 
     # --- Main loop ---
     running = True
     while running:
+        w, h = screen.get_size()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
                 break
 
+            # Divider drag
+            if divider.handle_event(event, w, h):
+                # Update widget rects after divider moved
+                br = board_rect()
+                board_widget._rect    = br
+                board_widget._cell_w  = br.width  // 9
+                board_widget._cell_h  = br.height // 9
+                board_widget._digit_font = None
+                board_widget._cand_font  = None
+                control_panel._rect   = panel_rect()
+                control_panel._rebuild_layout()
+                status_bar._rect      = status_rect()
+                continue
+
+            # Window resize
+            if event.type == pygame.VIDEORESIZE:
+                new_w, new_h = event.w, event.h
+                # Keep divider proportional
+                ratio = divider.x / w if w > 0 else 0.68
+                new_div_x = _clamp(
+                    int(ratio * new_w),
+                    MIN_BOARD_PX,
+                    new_w - SIDE_PANEL_W - DIVIDER_W,
+                )
+                divider._x = new_div_x
+
+                br = board_rect()
+                board_widget._rect    = br
+                board_widget._cell_w  = br.width  // 9
+                board_widget._cell_h  = br.height // 9
+                board_widget._digit_font = None
+                board_widget._cand_font  = None
+                control_panel._rect   = panel_rect()
+                control_panel._rebuild_layout()
+                status_bar._rect      = status_rect()
+                continue
+
             if handle_global_keys(event):
                 continue
 
-            if event.type == pygame.VIDEORESIZE:
-                # Recalculate layout on resize.
-                w, h = event.w, event.h
-                new_grid = min(w - PANEL_W, h - STATUS_H)
-                new_grid = max(new_grid, 288)  # minimum 288 px (32 px/cell)
-                board_widget._rect = pygame.Rect(0, 0, new_grid, new_grid)
-                board_widget._cell_w = new_grid // 9
-                board_widget._cell_h = new_grid // 9
-                board_widget._digit_font = None
-                board_widget._cand_font = None
-                panel_rect = pygame.Rect(new_grid, 0, w - new_grid, new_grid)
-                control_panel._rect = panel_rect
-                status_rect = pygame.Rect(0, new_grid, w, STATUS_H)
-                status_bar._rect = status_rect
-                continue
-
-            # Route events: panel first, then board.
+            # Route to panel first, then board
             if not control_panel.handle_event(event):
                 board_widget.handle_event(event)
 
+        # Cursor
+        if divider.cursor(h) or divider._dragging:
+            pygame.mouse.set_cursor(resize_cursor)
+        else:
+            pygame.mouse.set_cursor(default_cursor)
+
         # Draw
-        screen.fill(theme_manager.active.bg)
+        theme = theme_manager.active
+        screen.fill(theme.bg)
+
         board_widget.draw()
         control_panel.draw()
         status_bar.draw()
+
+        # Draw divider
+        dv_rect = divider.rect(h, STATUS_H)
+        pygame.draw.rect(screen, theme.grid_line_thick, dv_rect)
+
+        # Draw panel border
+        px = divider.x + DIVIDER_W
+        pygame.draw.line(screen, theme.grid_line_thick, (px, 0), (px, h - STATUS_H), 1)
+
         pygame.display.flip()
         clock.tick(FPS)
 
